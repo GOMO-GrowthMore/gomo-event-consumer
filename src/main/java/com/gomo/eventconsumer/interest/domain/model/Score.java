@@ -1,0 +1,73 @@
+package com.gomo.eventconsumer.interest.domain.model;
+
+import static com.gomo.eventconsumer.common.exception.DomainErrorCode.*;
+
+import com.gomo.eventconsumer.common.domain.ValueObject;
+import com.gomo.eventconsumer.common.exception.PolicyViolationException;
+
+import jakarta.persistence.Embeddable;
+import lombok.Getter;
+
+@Getter
+@Embeddable
+@ValueObject
+public class Score {
+
+	private static final int MAXIMUM_SCORE = 10000;
+
+	private int score;
+
+	protected Score() {
+	}
+
+	public Score(int score) {
+		this.score = score;
+	}
+
+	public static Score createDefault() {
+		return new Score(0);
+	}
+
+	public static Score of(int score) {
+		return new Score(score);
+	}
+
+	public Score increase(int increment) {
+		validatePositive(increment);
+		return new Score(this.score + increment);
+	}
+
+	public int calculateIncreasedLevel(int scoreThreshold) {
+		if(hasReachedMaxScore()) {
+			return 0;
+		}
+
+		return this.score / scoreThreshold;
+	}
+
+	public Score trimExcess(int scoreThreshold) {
+		if(hasReachedMaxScore()) {
+			return new Score(MAXIMUM_SCORE);
+		}
+
+		if(this.score >= scoreThreshold) {
+			return new Score(this.score - scoreThreshold);
+		}
+		return new Score(this.score);
+	}
+
+	private void validatePositive(int increment) {
+		if(increment <= 0) {
+			throw new PolicyViolationException(INVALID_PARAMETER, "Score increment must be positive.");
+		}
+	}
+
+	private boolean hasReachedMaxScore() {
+		return this.score >= MAXIMUM_SCORE;
+	}
+
+	@Override
+	public String toString() {
+		return String.valueOf(this.score);
+	}
+}

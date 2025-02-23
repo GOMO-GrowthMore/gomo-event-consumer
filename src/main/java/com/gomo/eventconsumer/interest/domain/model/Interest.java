@@ -1,0 +1,98 @@
+package com.gomo.eventconsumer.interest.domain.model;
+
+import java.util.UUID;
+
+import com.gomo.eventconsumer.common.domain.Authorizable;
+import com.gomo.eventconsumer.common.domain.BaseAudit;
+import com.gomo.eventconsumer.interest.exception.InterestAccessDeniedException;
+import com.gomo.eventconsumer.interest.exception.InterestErrorCode;
+
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
+import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
+import jakarta.persistence.EmbeddedId;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Version;
+import lombok.Getter;
+
+@Getter
+@Entity
+public class Interest extends BaseAudit implements Authorizable {
+
+	private static final String DEFAULT_LOGO_URL = "https://image.nurdykim.me/gomo/default-logo.png";
+
+	@EmbeddedId
+	private InterestId id;
+
+	@Embedded
+	@AttributeOverrides({
+		@AttributeOverride(name = "id", column = @Column(name = "registrant_id"))
+	})
+	private RegistrantId registrantId;
+
+	@Embedded
+	private Proficiency proficiency;
+
+	@Embedded
+	@AttributeOverrides({
+		@AttributeOverride(name = "interestName", column = @Column(name = "name"))
+	})
+	private InterestName name;
+	private String logoUrl;
+
+	@Version
+	private Long version;
+
+	protected Interest() {
+	}
+
+	public Interest(
+		InterestId id,
+		RegistrantId registrantId,
+		Proficiency proficiency,
+		InterestName name,
+		String logoUrl
+	) {
+		this.id = id;
+		this.registrantId = registrantId;
+		this.proficiency = proficiency;
+		this.name = name;
+		this.logoUrl = logoUrl;
+	}
+
+	public static Interest of(
+		InterestId id,
+		RegistrantId registrantId,
+		InterestName name,
+		String logoUrl
+	) {
+		if(logoUrl == null) {
+			logoUrl = DEFAULT_LOGO_URL;
+		}
+		return new Interest(id, registrantId, Proficiency.createDefault(), name, logoUrl);
+	}
+
+	public void updateName(InterestName updatedName) {
+		this.name = updatedName;
+	}
+
+	public void updateLogoUrl(String logoUrl) {
+		this.logoUrl = logoUrl;
+	}
+
+	public boolean hasDefaultLogo() {
+		return DEFAULT_LOGO_URL.equals(this.logoUrl);
+	}
+
+	public void adjustProficiency(int deltaTotalScore, int[] totalScoreForLevel, int[] scoreThresholdsPerLevel) {
+		this.proficiency = this.proficiency.adjust(deltaTotalScore, totalScoreForLevel, scoreThresholdsPerLevel);
+	}
+
+	@Override
+	public void validateAuthority(UUID accessorId) {
+		if(!accessorId.equals(this.registrantId.getId())) {
+			throw new InterestAccessDeniedException(InterestErrorCode.ACCESS_DENIED);
+		}
+	}
+}

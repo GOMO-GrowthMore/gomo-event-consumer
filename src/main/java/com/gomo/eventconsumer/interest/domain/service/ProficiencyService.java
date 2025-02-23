@@ -1,0 +1,103 @@
+package com.gomo.eventconsumer.interest.domain.service;
+
+import java.util.ArrayDeque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import org.springframework.transaction.annotation.Transactional;
+
+import com.gomo.eventconsumer.common.domain.service.DomainService;
+import com.gomo.eventconsumer.common.exception.DomainErrorCode;
+import com.gomo.eventconsumer.common.exception.NotFoundException;
+import com.gomo.eventconsumer.interest.domain.model.Interest;
+import com.gomo.eventconsumer.interest.domain.model.InterestId;
+import com.gomo.eventconsumer.interest.domain.model.InterestRelation;
+import com.gomo.eventconsumer.interest.domain.repository.InterestRelationRepository;
+import com.gomo.eventconsumer.interest.domain.repository.InterestRepository;
+
+import lombok.RequiredArgsConstructor;
+
+@RequiredArgsConstructor
+@DomainService
+public class ProficiencyService {
+
+	private final ScoreThresholdPolicyService scoreThresholdPolicyService;
+	private final InterestRepository interestRepository;
+	private final InterestRelationRepository interestRelationRepository;
+
+	@Transactional
+	public void adjust(InterestId interestId, int deltaTotalScore) {
+		int[] totalScoreForLevel = scoreThresholdPolicyService.getTotalScoreForLevel();
+		int[] scoreThresholdForLevel = scoreThresholdPolicyService.getScoreThresholdPolicy();
+		Map<InterestId, Set<Interest>> childToParentMap = buildChildToParentMap();
+
+		Set<InterestId> enhancedIds = new HashSet<>();
+		ArrayDeque<Interest> queue = new ArrayDeque<>();
+		queue.addLast(findInterest(interestId));
+		while (!queue.isEmpty()) {
+			Interest current = queue.removeFirst();
+			if (alreadyEnhancedInterest(current.getId(), enhancedIds)) {
+				continue;
+			}
+
+			adjustProficiency(current, deltaTotalScore, enhancedIds, totalScoreForLevel, scoreThresholdForLevel);
+			enqueueParents(childToParentMap.get(current.getId()), queue, enhancedIds);
+		}
+	}
+
+	private void adjustProficiency(Interest interest, int deltaTotalScore, Set<InterestId> enhancedIds, int[] totalScoreForLevel, int[] scoreThresholdForLevel) {
+		interest.adjustProficiency(deltaTotalScore, totalScoreForLevel, scoreThresholdForLevel);
+		enhancedIds.add(interest.getId());
+	}
+
+	private void enqueueParents(Set<Interest> parents, ArrayDeque<Interest> queue, Set<InterestId> enhancedIds) {
+		if (existParentInterests(parents)) {
+			for (Interest parent : parents) {
+				if (!alreadyEnhancedInterest(parent.getId(), enhancedIds)) {
+					queue.addLast(parent);
+				}
+			}
+		}
+	}
+
+	private boolean existParentInterests(Set<Interest> parents) {
+		return parents != null;
+	}
+
+	private boolean alreadyEnhancedInterest(InterestId currentId, Set<InterestId> enhancedIds) {
+		return enhancedIds.contains(currentId);
+	}
+
+	private Map<InterestId, Set<Interest>> buildChildToParentMap() {
+		List<InterestRelation> allRelations = interestRelationRepository.findAll();
+
+		Set<InterestId> interestIds = new HashSet<>();
+		for (InterestRelation relation : allRelations) {
+			interestIds.add(relation.getChildInterestId().toInterestId());
+			interestIds.add(relation.getParentInterestId().toInterestId());
+		}
+
+		List<Interest> interests = interestRepository.findAllById(interestIds);
+		Map<InterestId, Interest> interestMap = new HashMap<>();
+		for (Interest interest : interests) {
+			interestMap.put(interest.getId(), interest);
+		}
+
+		Map<InterestId, Set<Interest>> childToParentMap = new HashMap<>();
+		for (InterestRelation relation : allRelations) {
+			InterestId childId = relation.getChildInterestId().toInterestId();
+			InterestId parentId = relation.getParentInterestId().toInterestId();
+			childToParentMap.computeIfAbsent(childId, k -> new HashSet<>()).add(interestMap.get(parentId));
+		}
+
+		return childToParentMap;
+	}
+
+	private Interest findInterest(InterestId interestId) {
+		return interestRepository.findById(interestId)
+			.orElseThrow(() -> new NotFoundException(DomainErrorCode.NOT_FOUND, "Interest not found with id: " + interestId));
+	}
+}
