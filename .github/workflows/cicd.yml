@@ -24,6 +24,12 @@ jobs:
       - name: Check timezone
         run: date
 
+      - name: Create path for application.yml
+        run: |
+          mkdir -p ./src/main/resources/
+          mkdir -p ./src/test/resources/
+        shell: bash
+
       - name: Create Application.yml
         run: |
           echo "${{ secrets.APPLICATION_PROD }}" > ./src/main/resources/application.yml
